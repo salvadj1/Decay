@@ -6,6 +6,7 @@ using Fougerite;
 using UnityEngine;
 using System.IO;
 
+
 namespace Decay
 {
     public class DecayClass : Fougerite.Module
@@ -13,7 +14,7 @@ namespace Decay
         public override string Name { get { return "Decay"; } }
         public override string Author { get { return "Salva/Juli"; } }
         public override string Description { get { return "Decay"; } }
-        public override Version Version { get { return new Version("1.0"); } }
+        public override Version Version { get { return new Version("1.1"); } }
 
         public string red = "[color #B40404]";
         public string blue = "[color #81F7F3]";
@@ -27,13 +28,16 @@ namespace Decay
 
         public bool DecayShelter = true;
         public bool DecayCampFire = true;
-        public bool DeleteOnlyCampFiresOnGround = true;
+        public bool DeleteOnlyCampFireOnGround = true;
         public bool DecayBarricade = true;
+        public bool DeleteOnlyBarricadeOnGround = true;
+        public bool DecayWorkBench = true;
+        public bool DeleteOnlyWorkBenchOnGround = true;
         
-
         public int TimeDecayShelter = 60;
         public int TimeDecayCampFire = 60;
         public int TimeDecayBarricade = 60;
+        public int TimeDecayWorkBench = 60;
 
         public override void Initialize()
         {
@@ -75,13 +79,19 @@ namespace Decay
 
                 Settings.AddSetting("Shelter", "DecayShelter", "true");
                 Settings.AddSetting("CampFire", "DecayCampFire", "true");
-                Settings.AddSetting("CampFire", "DeleteOnlyCampFiresOnGround", "true");
+                Settings.AddSetting("CampFire", "DeleteOnlyCampFireOnGround", "true");
                 Settings.AddSetting("Barricade", "DecayBarricade", "true");
+                Settings.AddSetting("Barricade", "DeleteOnlyBarricadeOnGround", "true");
+                Settings.AddSetting("WorkBench", "DecayWorkBench", "true");
+                Settings.AddSetting("WorkBench", "DeleteOnlyWorkBenchOnGround", "true");
 
                 Settings.AddSetting("Shelter", "MinutesForDecayShelter", "60");
                 Settings.AddSetting("CampFire", "MinutesForDecayCampFire", "60");
                 Settings.AddSetting("Barricade", "MinutesForDecayBarricade", "60");
+                Settings.AddSetting("WorkBench", "MinutesForDecayWorkBench", "60");
+                Logger.Log("Decay Plugin: New Settings File Created!");
                 Settings.Save();
+                ReloadConfig();
             }
             else
             {
@@ -90,24 +100,41 @@ namespace Decay
                 {
                     DecayShelter = Settings.GetBoolSetting("Shelter", "DecayShelter");
                     DecayCampFire = Settings.GetBoolSetting("CampFire", "DecayCampFire");
-                    DeleteOnlyCampFiresOnGround = Settings.GetBoolSetting("CampFire", "DeleteOnlyCampFiresOnGround");
+                    DeleteOnlyCampFireOnGround = Settings.GetBoolSetting("CampFire", "DeleteOnlyCampFireOnGround");
                     DecayBarricade = Settings.GetBoolSetting("Barricade", "DecayBarricade");
-                    
+                    DeleteOnlyCampFireOnGround = Settings.GetBoolSetting("Barricade", "DeleteOnlyBarricadeOnGround");
+                    DecayWorkBench = Settings.GetBoolSetting("WorkBench", "DecayWorkBench");
+                    DeleteOnlyWorkBenchOnGround = Settings.GetBoolSetting("WorkBench", "DeleteOnlyWorkBenchOnGround");
 
                     TimeDecayShelter = int.Parse(Settings.GetSetting("Shelter", "MinutesForDecayShelter"));
                     TimeDecayCampFire = int.Parse(Settings.GetSetting("CampFire", "MinutesForDecayCampFire"));
                     TimeDecayBarricade = int.Parse(Settings.GetSetting("Barricade", "MinutesForDecayBarricade"));
+                    TimeDecayWorkBench = int.Parse(Settings.GetSetting("WorkBench", "MinutesForDecayWorkBench"));
+                    Logger.Log("Decay Plugin: Settings file Loaded!");
                 }
                 catch (Exception ex)
                 {
-                    Logger.LogError("Decay Plugin: detected a problem in the configuration, please delete the Settings.ini file and restart the server ** " + ex.Message);
+                    Logger.LogError("Decay Plugin: Detected a problem in the configuration");
+                    Logger.Log("ERROR -->" + ex.Message);
+                    File.Delete(Path.Combine(ModuleFolder, "Settings.ini"));
+                    Logger.LogError("Decay Plugin: Deleted the old configuration file");
+                    ReloadConfig();
                 }
                 return;
             }
         }
         public void OnEntityDeployed(Fougerite.Player pl, Fougerite.Entity e, Fougerite.Player actualplacer)
         {
-            if (e.Name == "Wood_Shelter" || e.Name == "Campfire" || e.Name == "Wood Barricade")
+            /*
+            //Informacion extra (solo devs)
+            if (actualplacer.Admin)
+            {
+                actualplacer.MessageFrom(Name, "Name: " + e.Name);
+                actualplacer.MessageFrom(Name, "Dis: " + Convert.ToDouble(World.GetWorld().GetGroundDist(e.Location)));
+            }
+            // ***********************
+            */
+            if (e.Name == "Wood_Shelter" || e.Name == "Campfire" || e.Name == "Wood Barricade" || e.Name == "Workbench")
             {
                 var dict = new Dictionary<string, object>();
                 dict["entity"] = e;
@@ -119,7 +146,7 @@ namespace Decay
                 }
                 else if (e.Name == "Campfire" && DecayCampFire)
                 {
-                    if (DeleteOnlyCampFiresOnGround)
+                    if (DeleteOnlyCampFireOnGround)
                     {
                         var distance = World.GetWorld().GetGroundDist(e.Location);
                         var dis = Convert.ToDouble(distance);
@@ -134,12 +161,42 @@ namespace Decay
                         actualplacer.MessageFrom(Name, "This " + orange + e.Name + white + " will be removed automatically in " + TimeDecayCampFire + " minutes");
                         Timer1(TimeDecayCampFire * 60000, dict).Start();
                     }
-
                 }
                 else if (e.Name == "Wood Barricade" && DecayBarricade)
                 {
-                    actualplacer.MessageFrom(Name, "This " + orange + e.Name + white + " will be removed automatically in " + TimeDecayBarricade + " minutes");
-                    Timer1(TimeDecayBarricade * 60000, dict).Start();
+                    if (DeleteOnlyBarricadeOnGround)
+                    {
+                        var distance = World.GetWorld().GetGroundDist(e.Location);
+                        var dis = Convert.ToDouble(distance);
+                        if (dis < 0.20)
+                        {
+                            actualplacer.MessageFrom(Name, "This " + orange + e.Name + white + " will be removed automatically in " + TimeDecayBarricade + " minutes");
+                            Timer1(TimeDecayBarricade * 60000, dict).Start();
+                        }
+                    }
+                    else
+                    {
+                        actualplacer.MessageFrom(Name, "This " + orange + e.Name + white + " will be removed automatically in " + TimeDecayBarricade + " minutes");
+                        Timer1(TimeDecayBarricade * 60000, dict).Start();
+                    }
+                }
+                else if (e.Name == "Workbench" && DecayWorkBench)
+                {
+                    if (DeleteOnlyWorkBenchOnGround)
+                    {
+                        var distance = World.GetWorld().GetGroundDist(e.Location);
+                        var dis = Convert.ToDouble(distance);
+                        if (dis < 0.20)
+                        {
+                            actualplacer.MessageFrom(Name, "This " + orange + e.Name + white + " will be removed automatically in " + TimeDecayBarricade + " minutes");
+                            Timer1(TimeDecayWorkBench * 60000, dict).Start();
+                        }
+                    }
+                    else
+                    {
+                        actualplacer.MessageFrom(Name, "This " + orange + e.Name + white + " will be removed automatically in " + TimeDecayBarricade + " minutes");
+                        Timer1(TimeDecayWorkBench * 60000, dict).Start();
+                    }
                 }
             }
         }
@@ -156,8 +213,19 @@ namespace Decay
             e.Kill();
             Fougerite.Player pl = (Fougerite.Player)dict["player"];
             Fougerite.Entity ent = (Fougerite.Entity)dict["entity"];
-            ent.Destroy();
-            pl.Message("Your " + green + ent.Name + white + " has been removed for exceeding the maximum time allowed");
+            try
+            {
+                ent.Destroy();
+            }
+            catch(Exception exc)
+            {
+                Logger.Log(Name + " ERROR: Failed to destroy " + ent.Name + " at position " + ent.Location.ToString());
+                Logger.Log(Name + exc.ToString());
+            }
+            if (pl.IsAlive && !pl.IsDisconnecting)
+            {
+                pl.Message("Your " + green + ent.Name + white + " has been removed for exceeding the maximum time allowed");
+            }
         }
     }
 }
